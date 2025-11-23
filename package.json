@@ -1,8 +1,8 @@
 {
-  "name": "my-quiz-app",
+  "name": "demo_quiz",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://ptanh-marco.github.io/my-quiz-app",
+  "homepage": "https://ptanh-marco.github.io/demo_quiz",
   "dependencies": {
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
