@@ -37,7 +37,7 @@ jobs:
         run: npm install 
 
       - name: Build the React app
-        run: npm run build # This creates the 'build' folder with your static site
+        run: npm run deploy # This creates the 'build' folder with your static site
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
