@@ -35,11 +35,6 @@ jobs:
 
       - name: Force Clean Install
         run: |
-          # The following lines are NOT recommended for production workflows.
-          # They force a slow and potentially unstable dependency resolution.
-          npm install rimraf
-          rimraf ./node_modules
-          rimraf ./package-lock.json
           npm install
 
       - name: Build the React app
