@@ -43,12 +43,21 @@ jobs:
           npm install
 
       - name: Build the React app
+<<<<<<< .mine
         # *** THIS IS THE FIX ***
         # The build job should ONLY build the project, not deploy it.
         run: npm run build 
         env:
           # This is needed if you have warnings that you want to treat as errors
           CI: false
+=======
+        run: npm run deploy # This creates the 'build' folder with your static site
+
+
+
+
+
+>>>>>>> .theirs
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
