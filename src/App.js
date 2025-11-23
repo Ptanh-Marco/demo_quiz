@@ -1,5 +1,6 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, Link } from "react-router-dom";
+import { HashRouter as Router, Routes, Route } from "react-router-dom";
 import ParticipantQuiz from "./components/participant/ParticipantQuiz";
 import AdminPanel from "./components/admin/AdminPanel";
 import "./App.scss";

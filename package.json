@@ -1,7 +1,9 @@
+
 {
-  "name": "participant-quiz",
+  "name": "my-quiz-app",
   "version": "0.1.0",
   "private": true,
+  "homepage": "https://ptanh-marco.github.io/my-quiz-app",
   "dependencies": {
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
