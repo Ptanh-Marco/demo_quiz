@@ -404,3 +404,31 @@
         gap: 8px;
     }
 }
+.led-leaderboard-live {
+    position: fixed;
+    top: 32px;
+    right: 32px;
+    width: 320px;
+    z-index: 9999;
+    background: rgba(255,255,255,0.97);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.16), 0 1.5px 4px rgba(0,0,0,0.10);
+    border-radius: 12px;
+    padding: 22px 20px 18px 20px;
+    transition: opacity 0.4s;
+}
+.led-leaderboard-live .led-section-title {
+    font-size: 1.25rem;
+    color: #00695c;
+    margin-bottom: 18px;
+    text-align: center;
+}
+.led-leaderboard-live .led-leaderboard-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    font-size: 1.06rem;
+}
+.led-leaderboard-live .led-winner {
+    font-weight: bold;
+    color: #d4af37;
+}

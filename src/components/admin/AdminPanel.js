@@ -98,10 +98,13 @@ function LiveQuestionDisplay({ question, timer, questionNumber, totalQuestions, 
     );
 }
 
-function LeaderboardDisplay({ leaderboard }) {
+// Updated LeaderboardDisplay with 'live' prop and live CSS
+function LeaderboardDisplay({ leaderboard, live }) {
     return (
-        <section className="led-leaderboard">
-            <h2 className="led-section-title">🏆 Final Leaderboard 🏆</h2>
+        <section className={`led-leaderboard${live ? " led-leaderboard-live" : ""}`}>
+            <h2 className="led-section-title">
+                {live ? "🏆 Live Leaderboard 🏆" : "🏆 Final Leaderboard 🏆"}
+            </h2>
             <div className="led-leaderboard-list">
                 {leaderboard.map((item, idx) => (
                     <div
@@ -114,7 +117,7 @@ function LeaderboardDisplay({ leaderboard }) {
                     </div>
                 ))}
             </div>
-            <div className="led-congrats">Congratulations!</div>
+            {!live && <div className="led-congrats">Congratulations!</div>}
         </section>
     );
 }
@@ -178,7 +181,7 @@ export default function AdminPanel() {
         const scoresRef = ref(db, `rooms/${roomId}/scores`);
         const unsubParticipants = onValue(participantsRef, snap =>
             setParticipants(Object.entries(snap.val() || {}).map(([pid, v]) => ({ pid, ...v }))
-        ));
+            ));
         const unsubQuizState = onValue(quizStateDbRef, snap => {
             setQuizState(
                 snap.val() || {
@@ -375,8 +378,8 @@ export default function AdminPanel() {
                 <AdminHeader
                     title="Football Fans Quiz"
                     roomCode="---"
-                    onStart={() => {}} // Disabled
-                    onReset={() => {}} // Disabled
+                    onStart={() => { }} // Disabled
+                    onReset={() => { }} // Disabled
                     quizStarted={false}
                 />
                 <section className="led-roominfo">
@@ -401,7 +404,6 @@ export default function AdminPanel() {
     // --- Main LED Structure ---
     const basePath = process.env.PUBLIC_URL || '/';
     const participantURL = `${window.location.origin}${basePath}/#/participant?roomId=${roomId}`;
-//    const participantURL = `${window.location.origin}/#/participant?roomId=${roomId}`;
     const currentQuestion = questions[quizState.currentQuestionIndex];
 
     return (
@@ -431,17 +433,24 @@ export default function AdminPanel() {
                 </>
             )}
             {quizState.started && !quizState.finished && currentQuestion && (
-                <LiveQuestionView
-                    question={currentQuestion}
-                    timer={quizState.timer}
-                    currentQuestionIndex={quizState.currentQuestionIndex}
-                    totalQuestions={questions.length}
-                    answers={currentAnswers}
-                    participants={participants}
-                />
+                <>
+                    <LiveQuestionView
+                        question={currentQuestion}
+                        timer={quizState.timer}
+                        currentQuestionIndex={quizState.currentQuestionIndex}
+                        totalQuestions={questions.length}
+                        answers={currentAnswers}
+                        participants={participants}
+                    />
+                </>
             )}
+            {/* Live leaderboard shown fixed at top-right during quiz */}
+            {quizState.started && !quizState.finished && (
+                <LeaderboardDisplay leaderboard={leaderboard} live />
+            )}
+            {/* Final leaderboard shown at end of quiz */}
             {quizState.finished && (
-                <LeaderboardDisplay leaderboard={leaderboard} />
+                <LeaderboardDisplay leaderboard={leaderboard} live={false} />
             )}
             <AdminFooter eventLogo={null} sponsorLogo={null} />
         </div>

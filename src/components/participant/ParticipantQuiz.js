@@ -38,7 +38,7 @@ export default function ParticipantQuiz() {
     const [totalParticipants, setTotalParticipants] = useState(0);
     const [blocked, setBlocked] = useState(false);
     const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
-
+const [selected, setSelected] = useState(null); 
     // --- JOIN LOGIC ---
     const handleJoin = async () => {
         if (!username.trim()) {
