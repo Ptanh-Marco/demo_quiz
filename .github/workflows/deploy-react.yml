@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: 20
       - name: Install dependencies
-        run: npm install      # This command requires package-lock.json
+        run: npm install --force      # This command requires package-lock.json
       - name: Build the React app
         run: npm run build
         env:
