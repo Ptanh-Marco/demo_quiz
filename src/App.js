@@ -5,12 +5,18 @@ import AdminPanel from "./components/admin/AdminPanel";
 import CreateRoom from './components/admin/Room/CreateRoom';
 import NotFound from "./components/NotFound";
 import AdminLogin from "./components/admin/AdminLogin";
+import LineUpRandom from "./components/lineup-random.component/lineup-random";
 
 import "./App.scss";
 
 function ProtectedAdminPanel() {
     const [verified, setVerified] = useState(false);
     return verified ? <AdminPanel /> : <AdminLogin onSuccess={() => setVerified(true)} />;
+}
+
+function ProtectedLineUp() {
+    const [verified, setVerified] = useState(false);
+    return verified ? <LineUpRandom /> : <AdminLogin onSuccess={() => setVerified(true)} />;
 }
 
 function App() {
@@ -22,6 +28,7 @@ function App() {
                 <Route path="/participant" element={<ParticipantQuiz />} />
                 <Route path="/participant/:roomId" element={<ParticipantQuiz />} />
                 <Route path="/404" element={<NotFound />} />
+                <Route path="/lineup" element={<ProtectedLineUp />} />
             </Routes>
         </Router>
     );
