@@ -16,24 +16,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-
       - name: Install dependencies
-        run: npm install
-        # Remove --force unless you have a reason
-
+        run: npm install --force      # This command requires package-lock.json
       - name: Build the React app
         run: npm run build
         env:
           NODE_ENV: production
-
+          CI: false
       - name: Setup Pages
         uses: actions/configure-pages@v5
-
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
