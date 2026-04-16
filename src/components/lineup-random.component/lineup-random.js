@@ -5,7 +5,7 @@ import { db } from '../../config/firebaseConfig';
 import { ref, get, runTransaction } from "firebase/database";
 
 // Settings
-const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTVChZ9SEf9h1812OKiOgjb25gYEmGuU9feyquCqB09VetwLwjvxr5xSNYD-CLv58QpVNmMTepI8GE4/pub?gid=1577263884&single=true&output=csv";
+const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRfoixF4aaxwn2SzzIY6bC2ACiUMqkk54kLtNNfCvLSlDWKBlQ6Zu0GSdPRPFVeYonpbBpv0b4D1ajv/pub?gid=1577263884&single=true&output=csv";
 const TEAM_COUNT = 3;
 
 // Utility
@@ -154,6 +154,24 @@ function TeamsDisplay({ teams = [], teamTierOrder }) {
     );
 }
 
+// Normalize Vietnamese names before comparing (handles NFC/NFD differences from CSV)
+function normName(s) {
+    return s.normalize("NFC").trim();
+}
+
+// Conflict check: returns true if playerName conflicts with any member of team
+function hasConflict(playerName, team, exceptPairs) {
+    const pNorm = normName(playerName);
+    return team.some(member => {
+        const mNorm = normName(member.name);
+        return exceptPairs.some(([a, b]) => {
+            const aN = normName(a), bN = normName(b);
+            return (aN === pNorm && bN === mNorm) ||
+                   (bN === pNorm && aN === mNorm);
+        });
+    });
+}
+
 function LineUpRandom() {
     // Data state
     const [players, setPlayers] = useState([]);
@@ -179,9 +197,14 @@ function LineUpRandom() {
     const [remainderPlayers, setRemainderPlayers] = useState([]);
     const [remainderIdx, setRemainderIdx] = useState(0);
     const advancingTier = useRef(false);
+    const wheelPoolRef = useRef([]); // tracks what the current wheel is actually showing
+    const selectedRef = useRef(null); // stores the actual player picked when prizeNumber is set
 
     // Randomization count state
     const [randomCountToday, setRandomCountToday] = useState(0);
+
+    // Except pairs: players that must never end up on the same team
+    const [exceptPairs, setExceptPairs] = useState([["Mai Lê Khanh", "Warren Dương Nguyễn"]]);
 
     // For "count only once per process"
     const hasCountedRef = useRef(false);
@@ -341,10 +364,11 @@ function LineUpRandom() {
         }
     }
 
-    // Wheel data
+    // Wheel data — round mode shows ALL players (conflict resolved silently after spin stops)
     let wheelData = [];
     let assignMode = null;
     if (roundPlayers.length > 0 && teamInRound < TEAM_COUNT) {
+        wheelPoolRef.current = [...roundPlayers];
         wheelData = roundPlayers.map((p) => ({ option: p.name }));
         assignMode = "round";
     } else if (remainderPlayers.length > 0 && remainderIdx < remainderPlayers.length) {
@@ -352,39 +376,45 @@ function LineUpRandom() {
         const eligibleTeams = teams
             .map((team, idx) => (team.length === minSize ? idx : null))
             .filter((idx) => idx !== null);
+        // Remainder: silently prefer non-conflicting teams, but show all eligible teams on wheel
+        wheelPoolRef.current = eligibleTeams;
         wheelData = eligibleTeams.map((idx) => ({ option: `Team ${idx + 1}` }));
         assignMode = "remainder";
     }
 
-    // Handle wheel stop (no counter increment here!)
+    // Handle wheel stop — team always follows spin order: Team 1 → 2 → 3
     function handleWheelStop() {
-        if (assignMode === "round") {
-            const player = roundPlayers[prizeNumber];
-            const teamIdx = teamInRound;
+        const sel = selectedRef.current;
+        if (!sel) return;
+        if (sel.type === "round") {
+            const player = sel.player;
+            const assignTeamIdx = teamInRound; // strict 0→1→2 order
+
             assignedNamesRef.current.add(player.name);
             setTeams(prevTeams =>
                 prevTeams.map((team, idx) =>
-                    idx === teamIdx ? [...team, player] : team
+                    idx === assignTeamIdx ? [...team, player] : team
                 )
             );
             setMustSpin(false);
-            const nextPlayers = roundPlayers.filter((p, idx) => idx !== prizeNumber);
+            selectedRef.current = null;
+            const nextPlayers = roundPlayers.filter(p => p.name !== player.name);
             if (teamInRound + 1 < TEAM_COUNT) {
                 setRoundPlayers(nextPlayers);
                 setTeamInRound(teamInRound + 1);
-                setTimeout(() => setMustSpin(true), 350);
             } else {
                 setRoundPlayers([]);
                 setTeamInRound(0);
                 setTimeout(startNextRound, 350);
             }
-        } else if (assignMode === "remainder") {
-            const minSize = Math.min(...teams.map(team => team.length));
-            const eligibleTeams = teams
-                .map((team, idx) => (team.length === minSize ? idx : null))
-                .filter((idx) => idx !== null);
-            const teamIdx = eligibleTeams[prizeNumber];
+        } else if (sel.type === "remainder") {
             const player = remainderPlayers[remainderIdx];
+            const pool = wheelPoolRef.current;
+            let teamIdx = pool[sel.poolIdx];
+            // Silently pick a non-conflicting team if possible
+            const safe = pool.find(t => !hasConflict(player.name, teams[t], exceptPairs));
+            if (safe !== undefined) teamIdx = safe;
+
             assignedNamesRef.current.add(player.name);
             setTeams(prevTeams =>
                 prevTeams.map((team, idx) =>
@@ -392,6 +422,7 @@ function LineUpRandom() {
                 )
             );
             setMustSpin(false);
+            selectedRef.current = null;
             if (remainderIdx + 1 < remainderPlayers.length) {
                 setRemainderIdx(i => i + 1);
             } else {
@@ -406,13 +437,23 @@ function LineUpRandom() {
     useEffect(() => {
         if (!hasStarted) return;
         if (assignMode === "round" && roundPlayers.length > 0 && teamInRound < TEAM_COUNT) {
-            setPrizeNumber(Math.floor(Math.random() * roundPlayers.length));
+            if (wheelData.length === 0) return;
+            // Silently pick from non-conflicting players for the current team.
+            // The wheel still shows ALL players — it just "happens" to land on a safe one.
+            const safePool = roundPlayers.filter(p => !hasConflict(p.name, teams[teamInRound], exceptPairs));
+            const pickFrom = safePool.length > 0 ? safePool : roundPlayers; // fallback if all conflict
+            const picked = pickFrom[Math.floor(Math.random() * pickFrom.length)];
+            const idx = roundPlayers.findIndex(p => p.name === picked.name);
+            selectedRef.current = { type: "round", player: picked };
+            setPrizeNumber(idx);
             setTimeout(() => setMustSpin(true), 350);
         }
         if (assignMode === "remainder") {
             if (remainderPlayers.length === 0 || remainderIdx >= remainderPlayers.length) return;
             if (wheelData.length === 0) return;
-            setPrizeNumber(Math.floor(Math.random() * wheelData.length));
+            const idx = Math.floor(Math.random() * wheelData.length);
+            selectedRef.current = { type: "remainder", poolIdx: idx };
+            setPrizeNumber(idx);
             setTimeout(() => setMustSpin(true), 350);
         }
         // eslint-disable-next-line
@@ -462,6 +503,7 @@ function LineUpRandom() {
                 }}
             >Start Random</button>
             {isSynced && (
+                <>
                 <div
                     style={{
                         display: "flex",
@@ -527,6 +569,7 @@ function LineUpRandom() {
                         )}
                     </div>
                 </div>
+                </>
             )}
         </div>
     );
