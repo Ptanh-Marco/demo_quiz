@@ -159,17 +159,59 @@ function normName(s) {
     return s.normalize("NFC").trim();
 }
 
-// Conflict check: returns true if playerName conflicts with any member of team
-function hasConflict(playerName, team, exceptPairs) {
+// Conflict check using a direct assignment map (normName → teamIdx).
+// More reliable than checking teams state, which depends on React render timing.
+function wouldConflict(playerName, teamIdx, exceptPairs, assignedMap) {
     const pNorm = normName(playerName);
-    return team.some(member => {
-        const mNorm = normName(member.name);
-        return exceptPairs.some(([a, b]) => {
-            const aN = normName(a), bN = normName(b);
-            return (aN === pNorm && bN === mNorm) ||
-                   (bN === pNorm && aN === mNorm);
-        });
-    });
+    for (const [a, b] of exceptPairs) {
+        const aN = normName(a), bN = normName(b);
+        const partnerNorm = pNorm === aN ? bN : pNorm === bN ? aN : null;
+        if (partnerNorm !== null && assignedMap[partnerNorm] === teamIdx) return true;
+    }
+    return false;
+}
+
+// Generate all permutations of an array.
+function permutations(arr) {
+    if (arr.length <= 1) return [[...arr]];
+    const result = [];
+    for (let i = 0; i < arr.length; i++) {
+        const rest = permutations([...arr.slice(0, i), ...arr.slice(i + 1)]);
+        rest.forEach(p => result.push([arr[i], ...p]));
+    }
+    return result;
+}
+
+// Plan all TEAM_COUNT picks for a sub-round as a batch.
+// Checks all team-assignment permutations to guarantee no except-pair conflict.
+// This prevents the "last player forced into conflicting team" bug that per-spin
+// filtering cannot avoid.
+function planSubRound(allRoundPlayers, teamCount, exceptPairs, assignedTeamRef) {
+    // Shuffle for randomness
+    const shuffled = [...allRoundPlayers];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    const picked = shuffled.slice(0, teamCount);
+
+    // Try all permutations of [0..teamCount-1] in random order until one is conflict-free
+    const teamPerms = permutations(Array.from({ length: teamCount }, (_, i) => i));
+    for (let i = teamPerms.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [teamPerms[i], teamPerms[j]] = [teamPerms[j], teamPerms[i]];
+    }
+    for (const perm of teamPerms) {
+        if (picked.every((p, i) => !wouldConflict(p.name, perm[i], exceptPairs, assignedTeamRef))) {
+            const plan = {};
+            picked.forEach((p, i) => { plan[perm[i]] = p; });
+            return plan; // { teamIdx: player }
+        }
+    }
+    // Fallback: constraints are impossible to satisfy, assign in order
+    const plan = {};
+    picked.forEach((p, i) => { plan[i] = p; });
+    return plan;
 }
 
 function LineUpRandom() {
@@ -197,8 +239,10 @@ function LineUpRandom() {
     const [remainderPlayers, setRemainderPlayers] = useState([]);
     const [remainderIdx, setRemainderIdx] = useState(0);
     const advancingTier = useRef(false);
-    const wheelPoolRef = useRef([]); // tracks what the current wheel is actually showing
-    const selectedRef = useRef(null); // stores the actual player picked when prizeNumber is set
+    const wheelPoolRef = useRef([]);
+    const selectedRef = useRef(null);
+    const assignedTeamRef = useRef({});
+    const roundPlanRef = useRef(null); // pre-planned { teamIdx: player } for the current sub-round
 
     // Randomization count state
     const [randomCountToday, setRandomCountToday] = useState(0);
@@ -259,6 +303,7 @@ function LineUpRandom() {
         setMustSpin(false);
         setHasStarted(false);
         assignedNamesRef.current = new Set();
+        assignedTeamRef.current = {};
 
         const data = await fetchPlayersFromSheet();
         setPlayers(data);
@@ -382,15 +427,16 @@ function LineUpRandom() {
         assignMode = "remainder";
     }
 
-    // Handle wheel stop — team always follows spin order: Team 1 → 2 → 3
+    // Handle wheel stop — all data read from selectedRef (captured at spin-start), no stale closures
     function handleWheelStop() {
         const sel = selectedRef.current;
         if (!sel) return;
         if (sel.type === "round") {
-            const player = sel.player;
-            const assignTeamIdx = teamInRound; // strict 0→1→2 order
+            const { player, teamIdx: assignTeamIdx, nextPlayers } = sel;
 
+            // Record assignment synchronously in ref — immediately visible to next spin's conflict check
             assignedNamesRef.current.add(player.name);
+            assignedTeamRef.current[normName(player.name)] = assignTeamIdx;
             setTeams(prevTeams =>
                 prevTeams.map((team, idx) =>
                     idx === assignTeamIdx ? [...team, player] : team
@@ -398,10 +444,9 @@ function LineUpRandom() {
             );
             setMustSpin(false);
             selectedRef.current = null;
-            const nextPlayers = roundPlayers.filter(p => p.name !== player.name);
-            if (teamInRound + 1 < TEAM_COUNT) {
+            if (assignTeamIdx + 1 < TEAM_COUNT) {
                 setRoundPlayers(nextPlayers);
-                setTeamInRound(teamInRound + 1);
+                setTeamInRound(assignTeamIdx + 1);
             } else {
                 setRoundPlayers([]);
                 setTeamInRound(0);
@@ -410,12 +455,13 @@ function LineUpRandom() {
         } else if (sel.type === "remainder") {
             const player = remainderPlayers[remainderIdx];
             const pool = wheelPoolRef.current;
+            // Pick any non-conflicting team; fall back to poolIdx if all conflict
             let teamIdx = pool[sel.poolIdx];
-            // Silently pick a non-conflicting team if possible
-            const safe = pool.find(t => !hasConflict(player.name, teams[t], exceptPairs));
+            const safe = pool.find(t => !wouldConflict(player.name, t, exceptPairs, assignedTeamRef.current));
             if (safe !== undefined) teamIdx = safe;
 
             assignedNamesRef.current.add(player.name);
+            assignedTeamRef.current[normName(player.name)] = teamIdx;
             setTeams(prevTeams =>
                 prevTeams.map((team, idx) =>
                     idx === teamIdx ? [...team, player] : team
@@ -438,13 +484,21 @@ function LineUpRandom() {
         if (!hasStarted) return;
         if (assignMode === "round" && roundPlayers.length > 0 && teamInRound < TEAM_COUNT) {
             if (wheelData.length === 0) return;
-            // Silently pick from non-conflicting players for the current team.
-            // The wheel still shows ALL players — it just "happens" to land on a safe one.
-            const safePool = roundPlayers.filter(p => !hasConflict(p.name, teams[teamInRound], exceptPairs));
-            const pickFrom = safePool.length > 0 ? safePool : roundPlayers; // fallback if all conflict
-            const picked = pickFrom[Math.floor(Math.random() * pickFrom.length)];
-            const idx = roundPlayers.findIndex(p => p.name === picked.name);
-            selectedRef.current = { type: "round", player: picked };
+            // At the start of each sub-round (teamInRound === 0), plan ALL TEAM_COUNT picks
+            // together as a batch so no player can ever be forced into a conflicting team.
+            if (teamInRound === 0) {
+                roundPlanRef.current = planSubRound(roundPlayers, TEAM_COUNT, exceptPairs, assignedTeamRef.current);
+            }
+            const planned = roundPlanRef.current?.[teamInRound];
+            if (!planned) return;
+            const idx = roundPlayers.findIndex(p => p.name === planned.name);
+            if (idx === -1) return;
+            selectedRef.current = {
+                type: "round",
+                player: planned,
+                teamIdx: teamInRound,
+                nextPlayers: roundPlayers.filter(p => p.name !== planned.name),
+            };
             setPrizeNumber(idx);
             setTimeout(() => setMustSpin(true), 350);
         }
