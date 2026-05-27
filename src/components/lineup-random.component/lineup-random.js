@@ -455,10 +455,20 @@ function LineUpRandom() {
         } else if (sel.type === "remainder") {
             const player = remainderPlayers[remainderIdx];
             const pool = wheelPoolRef.current;
-            // Pick any non-conflicting team; fall back to poolIdx if all conflict
+            // Pick any non-conflicting team from the min-size pool
             let teamIdx = pool[sel.poolIdx];
             const safe = pool.find(t => !wouldConflict(player.name, t, exceptPairs, assignedTeamRef.current));
-            if (safe !== undefined) teamIdx = safe;
+            if (safe !== undefined) {
+                teamIdx = safe;
+            } else {
+                // All min-size teams conflict (except pair already placed there) —
+                // expand to ALL teams sorted by size ascending and pick the smallest safe one.
+                const allSorted = [...Array(TEAM_COUNT).keys()]
+                    .sort((a, b) => teams[a].length - teams[b].length);
+                const safeFallback = allSorted.find(t => !wouldConflict(player.name, t, exceptPairs, assignedTeamRef.current));
+                if (safeFallback !== undefined) teamIdx = safeFallback;
+                // else truly impossible — keep pool[sel.poolIdx] as absolute last resort
+            }
 
             assignedNamesRef.current.add(player.name);
             assignedTeamRef.current[normName(player.name)] = teamIdx;
